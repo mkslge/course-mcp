@@ -1,111 +1,94 @@
-# course-mcp MCP server
+# course-mcp
 
-course-mcp
+`course-mcp` is a local Python MCP server for referencing course files from a
+configured classes directory.
 
-## Components
+The project is currently focused on listing available courses and building the
+service layer needed to browse course files safely.
 
-### Resources
+## Current Features
 
-The server implements a simple note storage system with:
-- Custom note:// URI scheme for accessing individual notes
-- Each note resource has a name, description and text/plain mimetype
+- Loads `ROOT_DIR` from `.env` or the process environment.
+- Restricts file access to paths inside `ROOT_DIR`.
+- Provides a `FileService` for safe file reads.
+- Provides a `CourseService` for course/file listing.
+- Exposes an MCP tool:
+  - `list-courses`: lists the top-level course directories under `ROOT_DIR`.
 
-### Prompts
+## Project Layout
 
-The server provides a single prompt:
-- summarize-notes: Creates summaries of all stored notes
-  - Optional "style" argument to control detail level (brief/detailed)
-  - Generates prompt combining all current notes with style preference
-
-### Tools
-
-The server implements one tool:
-- add-note: Adds a new note to the server
-  - Takes "name" and "content" as required string arguments
-  - Updates server state and notifies clients of resource changes
+```text
+src/course_mcp/
+  server.py              MCP server boundary
+  config/                environment/config loading
+  services/
+    file_service.py      safe filesystem access
+    course_service.py    course-oriented operations
+  models/                simple data models
+tests/                   pytest tests
+skills/                  project-specific agent skills
+```
 
 ## Configuration
 
-[TODO: Add configuration details specific to your implementation]
+Create a `.env` file at the project root:
 
-## Quickstart
+```bash
+ROOT_DIR="/Users/markseeliger/Desktop/Classes/UMD"
+```
 
-### Install
+`ROOT_DIR` must point to an existing directory. Each direct child directory is
+treated as a course.
 
-#### Claude Desktop
+You can also pass `ROOT_DIR` directly through the environment instead of using
+`.env`.
 
-On MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+## Run Locally
 
-<details>
-  <summary>Development/Unpublished Servers Configuration</summary>
-  ```
-  "mcpServers": {
-    "course-mcp": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/Users/markseeliger/Desktop/Coding/create-python-server/practice",
-        "run",
-        "course-mcp"
-      ]
-    }
-  }
-  ```
-</details>
+From this project directory:
 
-<details>
-  <summary>Published Servers Configuration</summary>
-  ```
-  "mcpServers": {
-    "course-mcp": {
-      "command": "uvx",
-      "args": [
-        "course-mcp"
-      ]
-    }
-  }
-  ```
-</details>
+```bash
+uv run course-mcp
+```
+
+Because MCP servers run over stdio, they are usually launched by an MCP client
+rather than run directly by hand.
+
+## Install In Codex
+
+Register the server with Codex:
+
+```bash
+codex mcp add course-mcp \
+  --env ROOT_DIR=/Users/markseeliger/Desktop/Classes/UMD \
+  -- uv --directory /Users/markseeliger/Desktop/Coding/create-python-server/course_mcp run course-mcp
+```
+
+Verify the registration:
+
+```bash
+codex mcp get course-mcp
+```
+
+If you change MCP tools, restart Codex or start a new Codex session so the tool
+list is reloaded.
 
 ## Development
 
-### Building and Publishing
-
-To prepare the package for distribution:
-
-1. Sync dependencies and update lockfile:
-```bash
-uv sync
-```
-
-2. Build package distributions:
-```bash
-uv build
-```
-
-This will create source and wheel distributions in the `dist/` directory.
-
-3. Publish to PyPI:
-```bash
-uv publish
-```
-
-Note: You'll need to set PyPI credentials via environment variables or command flags:
-- Token: `--token` or `UV_PUBLISH_TOKEN`
-- Or username/password: `--username`/`UV_PUBLISH_USERNAME` and `--password`/`UV_PUBLISH_PASSWORD`
-
-### Debugging
-
-Since MCP servers run over stdio, debugging can be challenging. For the best debugging
-experience, we strongly recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector).
-
-
-You can launch the MCP Inspector via [`npm`](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) with this command:
+Run the test suite:
 
 ```bash
-npx @modelcontextprotocol/inspector uv --directory /Users/markseeliger/Desktop/Coding/create-python-server/practice run course-mcp
+uv run pytest
 ```
 
+Run a compile check:
 
-Upon launching, the Inspector will display a URL that you can access in your browser to begin debugging.
+```bash
+python3 -m compileall src/course_mcp tests
+```
+
+Debug with MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector uv --directory /Users/markseeliger/Desktop/Coding/create-python-server/course_mcp run course-mcp
+```
