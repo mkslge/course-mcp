@@ -61,7 +61,27 @@ async def handle_list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {},
             },
-        )
+        ),
+        types.Tool(
+            name="list-course-files",
+            description=(
+                "List the files in a course. Agents should call list-courses "
+                "first, then pass one of the returned course titles as "
+                "course_title."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_title": {
+                        "type": "string",
+                        "description": (
+                            "The course directory title returned by list-courses."
+                        ),
+                    },
+                },
+                "required": ["course_title"],
+            },
+        ),
     ]
 
 
@@ -75,6 +95,18 @@ async def handle_call_tool(
             types.TextContent(
                 type="text",
                 text="\n".join(courses),
+            )
+        ]
+
+    if name == "list-course-files":
+        if arguments is None or "course_title" not in arguments:
+            raise ValueError("Missing required argument: course_title")
+
+        files = course_service.get_files(arguments["course_title"])
+        return [
+            types.TextContent(
+                type="text",
+                text="\n".join(files),
             )
         ]
 

@@ -14,6 +14,7 @@ service layer needed to browse course files safely.
 - Provides a `CourseService` for course/file listing.
 - Exposes an MCP tool:
   - `list-courses`: lists the top-level course directories under `ROOT_DIR`.
+  - `list-course-files`: lists the direct files inside a course directory.
 
 ## Project Layout
 
@@ -68,6 +69,12 @@ Verify the registration:
 
 ```bash
 codex mcp get course-mcp
+```
+
+Or refresh the registration with the project script:
+
+```bash
+ROOT_DIR=/Users/markseeliger/Desktop/Classes/UMD ./scripts/update_mcp_server.sh
 ```
 
 If you change MCP tools, restart Codex or start a new Codex session so the tool
