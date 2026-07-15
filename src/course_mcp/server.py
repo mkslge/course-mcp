@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from course_mcp.config import ROOT_DIR
 from course_mcp.services.course_service import CourseService
@@ -82,6 +83,50 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["course_title"],
             },
         ),
+        types.Tool(
+            name="search-course-file",
+            description=(
+                "Search for a literal keyword in one UTF-8 text or PDF file "
+                "inside a course. Matching is case-insensitive."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_title": {
+                        "type": "string",
+                        "description": (
+                            "The course directory title returned by list-courses."
+                        ),
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path relative to the course directory.",
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The literal text to search for.",
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20,
+                        "default": 3,
+                        "description": (
+                            "Lines of context before and after each match."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 20,
+                        "description": "Maximum matching lines to return.",
+                    },
+                },
+                "required": ["course_title", "file_path", "keyword"],
+            },
+        ),
     ]
 
 
@@ -107,6 +152,26 @@ async def handle_call_tool(
             types.TextContent(
                 type="text",
                 text="\n".join(files),
+            )
+        ]
+
+    if name == "search-course-file":
+        required_arguments = ("course_title", "file_path", "keyword")
+        for argument in required_arguments:
+            if arguments is None or argument not in arguments:
+                raise ValueError(f"Missing required argument: {argument}")
+
+        result = course_service.search_file(
+            arguments["course_title"],
+            arguments["file_path"],
+            arguments["keyword"],
+            arguments.get("context_lines", 3),
+            arguments.get("max_results", 20),
+        )
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(result),
             )
         ]
 

@@ -11,10 +11,19 @@ service layer needed to browse course files safely.
 - Loads `ROOT_DIR` from `.env` or the process environment.
 - Restricts file access to paths inside `ROOT_DIR`.
 - Provides a `FileService` for safe file reads.
-- Provides a `CourseService` for course/file listing.
+- Provides a `CourseService` for course/file listing and searching.
 - Exposes an MCP tool:
   - `list-courses`: lists the top-level course directories under `ROOT_DIR`.
   - `list-course-files`: lists the direct files inside a course directory.
+  - `search-course-file`: searches one UTF-8 text or text-extractable PDF file
+    within a course using case-insensitive literal matching.
+
+`search-course-file` requires `course_title`, a course-relative `file_path`, and
+a non-empty `keyword`. It optionally accepts `context_lines` (default 3, maximum
+20) and `max_results` (default 20, maximum 100). Search results are returned as
+JSON with matching line numbers and merged context excerpts. PDF results also
+identify the one-based page containing each excerpt. Scanned PDFs require OCR
+and are not supported.
 
 ## Project Layout
 
