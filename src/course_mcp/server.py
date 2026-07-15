@@ -20,6 +20,7 @@ server = Server("course-mcp")
 
 @server.list_resources()
 async def handle_list_resources() -> list[types.Resource]:
+    """Expose the currently stored internal notes as MCP resources."""
     return [
         types.Resource(
             uri=AnyUrl(f"note://internal/{name}"),
@@ -33,6 +34,7 @@ async def handle_list_resources() -> list[types.Resource]:
 
 @server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str:
+    """Return the text for a note resource identified by its MCP URI."""
     if uri.scheme != "note":
         raise ValueError(f"Unsupported URI scheme: {uri.scheme}")
 
@@ -45,11 +47,13 @@ async def handle_read_resource(uri: AnyUrl) -> str:
 
 @server.list_prompts()
 async def handle_list_prompts() -> list[types.Prompt]:
+    """Report that this server does not currently provide MCP prompts."""
     return []
 
 
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
+    """Describe the course tools and their input schemas to MCP clients."""
     return [
         types.Tool(
             name="list-courses",
@@ -134,6 +138,7 @@ async def handle_list_tools() -> list[types.Tool]:
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Dispatch an MCP tool call to the appropriate course service operation."""
     if name == "list-courses":
         courses = course_service.get_courses()
         return [
@@ -179,6 +184,7 @@ async def handle_call_tool(
 
 
 async def main():
+    """Run the MCP server over standard input and output streams."""
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,

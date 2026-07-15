@@ -3,6 +3,7 @@ import os
 
 
 def _load_env_file(env_path: Path) -> None:
+    """Load unset environment variables from a simple dotenv file."""
     if not env_path.exists():
         return
 
@@ -15,10 +16,12 @@ def _load_env_file(env_path: Path) -> None:
         key = key.strip()
         value = value.strip().strip('"').strip("'")
 
+        # Explicit process variables take precedence over local .env defaults.
         os.environ.setdefault(key, value)
 
 
 def _get_root_dir() -> Path:
+    """Load and validate the configured root directory for course data."""
     project_root = Path(__file__).resolve().parents[3]
     _load_env_file(project_root / ".env")
 

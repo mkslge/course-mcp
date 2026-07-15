@@ -3,9 +3,11 @@ from typing import Any, Protocol
 
 class FileService(Protocol):
     def list_dirs(self, relative_path: str = "") -> list[str]:
+        """Return direct child directories beneath a relative path."""
         pass
 
     def list_files(self, relative_path: str = "") -> list[str]:
+        """Return direct child files beneath a relative path."""
         pass
 
     def search_file(
@@ -16,17 +18,21 @@ class FileService(Protocol):
         context_lines: int = 3,
         max_results: int = 20,
     ) -> dict[str, Any]:
+        """Search one file within a course and return structured excerpts."""
         pass
 
 
 class CourseService:
     def __init__(self, file_service: FileService):
+        """Create a course service backed by an injected filesystem service."""
         self.file_service = file_service
 
     def get_courses(self) -> list[str]:
+        """Return the configured top-level course directories."""
         return self.file_service.list_dirs()
 
     def get_files(self, course_title: str) -> list[str]:
+        """Return the direct child files belonging to a course."""
         return self.file_service.list_files(course_title)
 
     def search_file(
@@ -37,6 +43,7 @@ class CourseService:
         context_lines: int = 3,
         max_results: int = 20,
     ) -> dict[str, Any]:
+        """Search a selected course file using the filesystem service."""
         return self.file_service.search_file(
             course_title,
             file_path,
@@ -50,9 +57,11 @@ course_service: CourseService | None = None
 
 
 def get_course_service() -> CourseService:
+    """Return the lazily initialized module-level course service."""
     global course_service
 
     if course_service is None:
+        # Delay config-backed filesystem creation until this facade is requested.
         from course_mcp.services.file_service import file_service
 
         course_service = CourseService(file_service)
@@ -61,10 +70,12 @@ def get_course_service() -> CourseService:
 
 
 def get_courses() -> list[str]:
+    """Return courses through the module-level course service."""
     return get_course_service().get_courses()
 
 
 def get_files(course_title: str) -> list[str]:
+    """Return course files through the module-level course service."""
     return get_course_service().get_files(course_title)
 
 
@@ -75,6 +86,7 @@ def search_file(
     context_lines: int = 3,
     max_results: int = 20,
 ) -> dict[str, Any]:
+    """Search a course file through the module-level course service."""
     return get_course_service().search_file(
         course_title,
         file_path,

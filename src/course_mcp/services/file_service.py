@@ -8,17 +8,21 @@ from course_mcp.config import ROOT_DIR
 
 class FileService:
     def __init__(self, root_dir: Path):
+        """Create a filesystem service restricted to a resolved root directory."""
         self.root_dir = root_dir.resolve()
 
     def resolve_path(self, relative_path: str) -> Path:
+        """Resolve a relative path while preventing access outside the root."""
         path = (self.root_dir / relative_path).resolve()
 
+        # Resolving first makes both parent traversal and symlink escapes visible.
         if not path.is_relative_to(self.root_dir):
             raise ValueError(f"Path is outside ROOT_DIR: {relative_path}")
 
         return path
 
     def _resolve_directory(self, relative_path: str) -> Path:
+        """Resolve and validate a directory located beneath the configured root."""
         path = self.resolve_path(relative_path)
 
         if not path.is_dir():
@@ -27,9 +31,11 @@ class FileService:
         return path
 
     def _relative_path(self, path: Path) -> str:
+        """Convert an absolute path into a portable path relative to the root."""
         return path.relative_to(self.root_dir).as_posix()
 
     def list_files(self, relative_path: str = "") -> list[str]:
+        """List direct child files in a directory using root-relative paths."""
         directory = self._resolve_directory(relative_path)
 
         return sorted(
@@ -39,6 +45,7 @@ class FileService:
         )
 
     def list_dirs(self, relative_path: str = "") -> list[str]:
+        """List direct child directories using root-relative paths."""
         directory = self._resolve_directory(relative_path)
 
         return sorted(
@@ -53,6 +60,7 @@ class FileService:
         start_line: int | None = None,
         end_line: int | None = None,
     ) -> str:
+        """Read an entire text file or an optional one-based line range."""
         path = self.resolve_path(relative_path)
 
         if start_line is None and end_line is None:
@@ -72,6 +80,7 @@ class FileService:
         context_lines: int = 3,
         max_results: int = 20,
     ) -> dict[str, Any]:
+        """Search one course file and return bounded matches with context."""
         self._validate_search_arguments(
             course_title,
             file_path,
@@ -81,17 +90,20 @@ class FileService:
         )
         path = self._resolve_course_file(course_title, file_path)
 
+        # Normalize a text document or each PDF page into the same line source.
         if path.suffix.casefold() == ".pdf":
             sources = self._read_pdf(path)
         else:
             sources = [(None, self._read_text(path).splitlines())]
 
+        # Scan every line before limiting results so match_count remains exact.
         matches = [
             (source_index, line_index)
             for source_index, (_, lines) in enumerate(sources)
             for line_index, line in enumerate(lines)
             if keyword.casefold() in line.casefold()
         ]
+        # The limit applies to marked matches; surrounding context stays intact.
         selected_matches = matches[:max_results]
         excerpts = self._build_excerpts(
             sources,
@@ -116,6 +128,7 @@ class FileService:
         context_lines: int,
         max_results: int,
     ) -> None:
+        """Validate search input types and configured numeric bounds."""
         for name, value in (
             ("course_title", course_title),
             ("file_path", file_path),
@@ -132,10 +145,12 @@ class FileService:
             raise ValueError("max_results must be an integer from 1 to 100")
 
     def _resolve_course_file(self, course_title: str, file_path: str) -> Path:
+        """Resolve a regular file while enforcing its selected course boundary."""
         course_relative = Path(course_title)
         if course_relative.is_absolute() or len(course_relative.parts) != 1:
             raise ValueError("course_title must name a direct course directory")
 
+        # A course must remain a direct root child after resolving symlinks.
         course_path = (self.root_dir / course_relative).resolve()
         if course_path.parent != self.root_dir:
             raise ValueError("course_title must name a direct course directory")
@@ -146,6 +161,7 @@ class FileService:
         if file_relative.is_absolute():
             raise ValueError("file_path must be relative to the course directory")
 
+        # Resolve before containment checks to reject traversal and symlink escapes.
         path = (course_path / file_relative).resolve()
         if not path.is_relative_to(course_path):
             raise ValueError(f"File is outside course directory: {file_path}")
@@ -157,6 +173,7 @@ class FileService:
         return path
 
     def _read_text(self, path: Path) -> str:
+        """Read a file as UTF-8 and translate decoding failures into tool errors."""
         try:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
@@ -165,6 +182,7 @@ class FileService:
             raise ValueError(f"Unable to read file: {path.name}") from exc
 
     def _read_pdf(self, path: Path) -> list[tuple[int | None, list[str]]]:
+        """Extract searchable lines from each page of an unencrypted PDF."""
         try:
             reader = PdfReader(path)
         except Exception as exc:
@@ -192,6 +210,8 @@ class FileService:
         matches: list[tuple[int, int]],
         context_lines: int,
     ) -> list[dict[str, Any]]:
+        """Merge overlapping match contexts into structured response excerpts."""
+        # Windows use zero-based, end-exclusive indexes until serialization.
         windows: list[tuple[int, int, int, list[int]]] = []
 
         for source_index, line_index in matches:
@@ -199,6 +219,7 @@ class FileService:
             start = max(0, line_index - context_lines)
             end = min(len(lines), line_index + context_lines + 1)
 
+            # Merge true overlaps in one source, but keep adjacent windows apart.
             if (
                 windows
                 and windows[-1][0] == source_index
@@ -219,6 +240,7 @@ class FileService:
         excerpts = []
         for source_index, start, end, match_lines in windows:
             page, lines = sources[source_index]
+            # The public response uses one-based, inclusive line locations.
             excerpt = {
                 "start_line": start + 1,
                 "end_line": end,
@@ -243,14 +265,17 @@ def get_contents(
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> str:
+    """Read text through the module's configured file service."""
     return file_service.get_contents(relative_path, start_line, end_line)
 
 
 def list_files(relative_path: str = "") -> list[str]:
+    """List files through the module's configured file service."""
     return file_service.list_files(relative_path)
 
 
 def list_dirs(relative_path: str = "") -> list[str]:
+    """List directories through the module's configured file service."""
     return file_service.list_dirs(relative_path)
 
 
@@ -261,6 +286,7 @@ def search_file(
     context_lines: int = 3,
     max_results: int = 20,
 ) -> dict[str, Any]:
+    """Search a course file through the module's configured file service."""
     return file_service.search_file(
         course_title,
         file_path,
