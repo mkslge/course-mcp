@@ -1,7 +1,11 @@
 import asyncio
-import json
+from typing import Any
 
 from course_mcp.config import ROOT_DIR
+from course_mcp.mcp_schemas import (
+    SEARCH_COURSE_FILE_OUTPUT_SCHEMA,
+    SEARCH_COURSE_OUTPUT_SCHEMA,
+)
 from course_mcp.services.course_service import CourseService
 from course_mcp.services.file_service import FileService
 from course_mcp.services.pdf_text_extractor import PdfTextExtractor
@@ -132,6 +136,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 },
                 "required": ["course_title", "file_path", "keyword"],
             },
+            outputSchema=SEARCH_COURSE_FILE_OUTPUT_SCHEMA,
         ),
         types.Tool(
             name="search-course",
@@ -174,14 +179,18 @@ async def handle_list_tools() -> list[types.Tool]:
                 },
                 "required": ["course_title", "keyword"],
             },
+            outputSchema=SEARCH_COURSE_OUTPUT_SCHEMA,
         ),
     ]
 
 
 @server.call_tool()
 async def handle_call_tool(
-    name: str, arguments: dict | None
-) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    name: str,
+    arguments: dict[str, Any] | None,
+) -> dict[str, Any] | list[
+    types.TextContent | types.ImageContent | types.EmbeddedResource
+]:
     """Dispatch an MCP tool call to the appropriate course service operation."""
     if name == "list-courses":
         courses = course_service.get_courses()
@@ -210,19 +219,13 @@ async def handle_call_tool(
             if arguments is None or argument not in arguments:
                 raise ValueError(f"Missing required argument: {argument}")
 
-        result = course_service.search_file(
+        return course_service.search_file(
             arguments["course_title"],
             arguments["file_path"],
             arguments["keyword"],
             arguments.get("context_lines", 3),
             arguments.get("max_results", 20),
         )
-        return [
-            types.TextContent(
-                type="text",
-                text=json.dumps(result),
-            )
-        ]
 
     if name == "search-course":
         required_arguments = ("course_title", "keyword")
@@ -230,18 +233,12 @@ async def handle_call_tool(
             if arguments is None or argument not in arguments:
                 raise ValueError(f"Missing required argument: {argument}")
 
-        result = course_service.search_course(
+        return course_service.search_course(
             arguments["course_title"],
             arguments["keyword"],
             arguments.get("context_lines", 3),
             arguments.get("max_results", 20),
         )
-        return [
-            types.TextContent(
-                type="text",
-                text=json.dumps(result),
-            )
-        ]
 
     raise ValueError(f"Unknown tool: {name}")
 

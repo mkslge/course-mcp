@@ -33,12 +33,17 @@ symbolic links, and directories named `venv`, `__pycache__`, `node_modules`,
 `dist`, or `build` are skipped. Other unreadable or non-searchable files are
 also skipped without failing the course-wide search.
 
+Both search tools return schema-validated results in MCP `structuredContent`.
+They also include the same result serialized as JSON `TextContent` for clients
+that do not yet consume structured tool output.
+
 ## Project Layout
 
 ```text
 src/course_mcp/
   server.py              MCP server boundary
   config/                environment/config loading
+  mcp_schemas/           MCP JSON Schema contracts
   services/
     file_service.py      safe filesystem access
     pdf_text_extractor.py  page-oriented PDF text extraction

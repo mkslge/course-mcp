@@ -1,0 +1,9 @@
+from course_mcp.mcp_schemas.search import (
+    SEARCH_COURSE_FILE_OUTPUT_SCHEMA,
+    SEARCH_COURSE_OUTPUT_SCHEMA,
+)
+
+__all__ = [
+    "SEARCH_COURSE_FILE_OUTPUT_SCHEMA",
+    "SEARCH_COURSE_OUTPUT_SCHEMA",
+]
