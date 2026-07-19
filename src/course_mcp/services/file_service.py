@@ -1,9 +1,16 @@
+import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader
 
 from course_mcp.config import ROOT_DIR
+
+COURSE_SEARCH_MAX_DEPTH = 5
+COURSE_SEARCH_EXCLUDED_DIRS = frozenset(
+    {"venv", "__pycache__", "node_modules", "dist", "build"}
+)
 
 
 class FileService:
@@ -89,7 +96,75 @@ class FileService:
             max_results,
         )
         path = self._resolve_course_file(course_title, file_path)
+        file_result = self._search_path(
+            path,
+            keyword,
+            context_lines,
+            max_results,
+        )
 
+        return {
+            "course_title": course_title,
+            "file_path": file_path,
+            "keyword": keyword,
+            **file_result,
+        }
+
+    def search_course(
+        self,
+        course_title: str,
+        keyword: str,
+        context_lines: int = 3,
+        max_results: int = 20,
+    ) -> dict[str, Any]:
+        """Search eligible files recursively within one course."""
+        self._validate_course_search_arguments(
+            course_title,
+            keyword,
+            context_lines,
+            max_results,
+        )
+        course_path = self._resolve_course(course_title)
+        course_candidate = self.root_dir / course_title
+        if course_candidate.is_symlink():
+            raise ValueError("course_title must not be a symbolic link")
+
+        matching_files = []
+
+        for path in self._iter_course_files(course_path):
+            file_path = path.relative_to(course_path).as_posix()
+            try:
+                file_result = self._search_path(
+                    path,
+                    keyword,
+                    context_lines,
+                    max_results,
+                )
+            except (OSError, ValueError):
+                continue
+
+            if file_result["match_count"] > 0:
+                matching_files.append({"file_path": file_path, **file_result})
+
+        matching_files.sort(key=lambda file_result: file_result["file_path"])
+        return {
+            "course_title": course_title,
+            "keyword": keyword,
+            "matching_file_count": len(matching_files),
+            "match_count": sum(
+                file_result["match_count"] for file_result in matching_files
+            ),
+            "files": matching_files,
+        }
+
+    def _search_path(
+        self,
+        path: Path,
+        keyword: str,
+        context_lines: int,
+        max_results: int,
+    ) -> dict[str, Any]:
+        """Search one resolved path and return its match details."""
         # Normalize a text document or each PDF page into the same line source.
         if path.suffix.casefold() == ".pdf":
             sources = self._read_pdf(path)
@@ -112,9 +187,6 @@ class FileService:
         )
 
         return {
-            "course_title": course_title,
-            "file_path": file_path,
-            "keyword": keyword,
             "match_count": len(matches),
             "truncated": len(matches) > max_results,
             "excerpts": excerpts,
@@ -129,11 +201,24 @@ class FileService:
         max_results: int,
     ) -> None:
         """Validate search input types and configured numeric bounds."""
-        for name, value in (
-            ("course_title", course_title),
-            ("file_path", file_path),
-            ("keyword", keyword),
-        ):
+        self._validate_course_search_arguments(
+            course_title,
+            keyword,
+            context_lines,
+            max_results,
+        )
+        if not isinstance(file_path, str):
+            raise ValueError("file_path must be a string")
+
+    def _validate_course_search_arguments(
+        self,
+        course_title: str,
+        keyword: str,
+        context_lines: int,
+        max_results: int,
+    ) -> None:
+        """Validate arguments shared by single-file and course-wide searches."""
+        for name, value in (("course_title", course_title), ("keyword", keyword)):
             if not isinstance(value, str):
                 raise ValueError(f"{name} must be a string")
 
@@ -144,18 +229,23 @@ class FileService:
         if type(max_results) is not int or not 1 <= max_results <= 100:
             raise ValueError("max_results must be an integer from 1 to 100")
 
-    def _resolve_course_file(self, course_title: str, file_path: str) -> Path:
-        """Resolve a regular file while enforcing its selected course boundary."""
+    def _resolve_course(self, course_title: str) -> Path:
+        """Resolve a direct course directory beneath the configured root."""
         course_relative = Path(course_title)
         if course_relative.is_absolute() or len(course_relative.parts) != 1:
             raise ValueError("course_title must name a direct course directory")
 
-        # A course must remain a direct root child after resolving symlinks.
         course_path = (self.root_dir / course_relative).resolve()
         if course_path.parent != self.root_dir:
             raise ValueError("course_title must name a direct course directory")
         if not course_path.is_dir():
             raise NotADirectoryError(f"Course is not a directory: {course_title}")
+
+        return course_path
+
+    def _resolve_course_file(self, course_title: str, file_path: str) -> Path:
+        """Resolve a regular file while enforcing its selected course boundary."""
+        course_path = self._resolve_course(course_title)
 
         file_relative = Path(file_path)
         if file_relative.is_absolute():
@@ -171,6 +261,38 @@ class FileService:
             raise IsADirectoryError(f"Path is not a file: {file_path}")
 
         return path
+
+    def _iter_course_files(self, course_path: Path) -> Iterator[Path]:
+        """Yield searchable candidates through the fixed course depth limit."""
+        for root, directory_names, file_names in os.walk(
+            course_path,
+            topdown=True,
+            followlinks=False,
+        ):
+            directory = Path(root)
+            relative_directory = directory.relative_to(course_path)
+            depth = len(relative_directory.parts)
+
+            if depth >= COURSE_SEARCH_MAX_DEPTH:
+                directory_names[:] = []
+            else:
+                directory_names[:] = sorted(
+                    name
+                    for name in directory_names
+                    if not name.startswith(".")
+                    and name not in COURSE_SEARCH_EXCLUDED_DIRS
+                    and not (directory / name).is_symlink()
+                )
+
+            for file_name in sorted(file_names):
+                path = directory / file_name
+                if (
+                    file_name.startswith(".")
+                    or path.is_symlink()
+                    or not path.is_file()
+                ):
+                    continue
+                yield path
 
     def _read_text(self, path: Path) -> str:
         """Read a file as UTF-8 and translate decoding failures into tool errors."""
@@ -290,6 +412,21 @@ def search_file(
     return file_service.search_file(
         course_title,
         file_path,
+        keyword,
+        context_lines,
+        max_results,
+    )
+
+
+def search_course(
+    course_title: str,
+    keyword: str,
+    context_lines: int = 3,
+    max_results: int = 20,
+) -> dict[str, Any]:
+    """Search a course recursively through the configured file service."""
+    return file_service.search_course(
+        course_title,
         keyword,
         context_lines,
         max_results,

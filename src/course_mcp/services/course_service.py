@@ -21,6 +21,16 @@ class FileService(Protocol):
         """Search one file within a course and return structured excerpts."""
         pass
 
+    def search_course(
+        self,
+        course_title: str,
+        keyword: str,
+        context_lines: int = 3,
+        max_results: int = 20,
+    ) -> dict[str, Any]:
+        """Search eligible files recursively within one course."""
+        pass
+
 
 class CourseService:
     def __init__(self, file_service: FileService):
@@ -47,6 +57,21 @@ class CourseService:
         return self.file_service.search_file(
             course_title,
             file_path,
+            keyword,
+            context_lines,
+            max_results,
+        )
+
+    def search_course(
+        self,
+        course_title: str,
+        keyword: str,
+        context_lines: int = 3,
+        max_results: int = 20,
+    ) -> dict[str, Any]:
+        """Search a course recursively using the filesystem service."""
+        return self.file_service.search_course(
+            course_title,
             keyword,
             context_lines,
             max_results,
@@ -90,6 +115,21 @@ def search_file(
     return get_course_service().search_file(
         course_title,
         file_path,
+        keyword,
+        context_lines,
+        max_results,
+    )
+
+
+def search_course(
+    course_title: str,
+    keyword: str,
+    context_lines: int = 3,
+    max_results: int = 20,
+) -> dict[str, Any]:
+    """Search a course recursively through the module-level service."""
+    return get_course_service().search_course(
+        course_title,
         keyword,
         context_lines,
         max_results,

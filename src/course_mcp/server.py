@@ -131,6 +131,48 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["course_title", "file_path", "keyword"],
             },
         ),
+        types.Tool(
+            name="search-course",
+            description=(
+                "Search recursively for a literal keyword in eligible UTF-8 "
+                "text and PDF files within one course."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_title": {
+                        "type": "string",
+                        "description": (
+                            "The course directory title returned by list-courses."
+                        ),
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The literal text to search for.",
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20,
+                        "default": 3,
+                        "description": (
+                            "Lines of context before and after each match."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 20,
+                        "description": (
+                            "Maximum matching lines returned from each file."
+                        ),
+                    },
+                },
+                "required": ["course_title", "keyword"],
+            },
+        ),
     ]
 
 
@@ -169,6 +211,25 @@ async def handle_call_tool(
         result = course_service.search_file(
             arguments["course_title"],
             arguments["file_path"],
+            arguments["keyword"],
+            arguments.get("context_lines", 3),
+            arguments.get("max_results", 20),
+        )
+        return [
+            types.TextContent(
+                type="text",
+                text=json.dumps(result),
+            )
+        ]
+
+    if name == "search-course":
+        required_arguments = ("course_title", "keyword")
+        for argument in required_arguments:
+            if arguments is None or argument not in arguments:
+                raise ValueError(f"Missing required argument: {argument}")
+
+        result = course_service.search_course(
+            arguments["course_title"],
             arguments["keyword"],
             arguments.get("context_lines", 3),
             arguments.get("max_results", 20),

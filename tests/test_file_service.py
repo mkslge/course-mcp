@@ -316,3 +316,152 @@ def test_search_file_rejects_unsearchable_pdfs(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="Unable to read PDF"):
         service.search_file("CMSC132", "lecture.pdf", "keyword")
+
+
+def test_search_course_includes_files_through_depth_five(monkeypatch, tmp_path):
+    module = load_file_service(monkeypatch, tmp_path)
+    service = module.FileService(tmp_path)
+    create_course_file(tmp_path, "root.txt", "needle\n")
+
+    parts = []
+    expected_paths = ["root.txt"]
+    for depth in range(1, 7):
+        parts.append(f"level{depth}")
+        relative_path = "/".join([*parts, "notes.txt"])
+        create_course_file(tmp_path, relative_path, "needle\n")
+        if depth <= 5:
+            expected_paths.append(relative_path)
+
+    result = service.search_course(
+        "CMSC132",
+        "needle",
+        context_lines=0,
+    )
+
+    assert result["matching_file_count"] == 6
+    assert result["match_count"] == 6
+    assert [file_result["file_path"] for file_result in result["files"]] == sorted(
+        expected_paths
+    )
+
+
+def test_search_course_skips_hidden_excluded_and_symlink_entries(
+    monkeypatch,
+    tmp_path,
+):
+    module = load_file_service(monkeypatch, tmp_path)
+    service = module.FileService(tmp_path)
+    visible = create_course_file(tmp_path, "visible.txt", "needle\n")
+    create_course_file(tmp_path, ".hidden.txt", "needle\n")
+    create_course_file(tmp_path, ".hidden/notes.txt", "needle\n")
+
+    for directory_name in (
+        "venv",
+        "__pycache__",
+        "node_modules",
+        "dist",
+        "build",
+    ):
+        create_course_file(
+            tmp_path,
+            f"{directory_name}/notes.txt",
+            "needle\n",
+        )
+
+    course_path = tmp_path / "CMSC132"
+    (course_path / "linked-file.txt").symlink_to(visible)
+    (course_path / "linked-directory").symlink_to(course_path)
+
+    result = service.search_course("CMSC132", "needle", context_lines=0)
+
+    assert [file_result["file_path"] for file_result in result["files"]] == [
+        "visible.txt"
+    ]
+
+
+def test_search_course_applies_result_limit_per_file_and_sorts_paths(
+    monkeypatch,
+    tmp_path,
+):
+    module = load_file_service(monkeypatch, tmp_path)
+    service = module.FileService(tmp_path)
+    create_course_file(tmp_path, "z-last.txt", "match\nmatch\n")
+    create_course_file(tmp_path, "a-first/notes.txt", "match\nmatch\nmatch\n")
+
+    result = service.search_course(
+        "CMSC132",
+        "match",
+        context_lines=0,
+        max_results=1,
+    )
+
+    assert result["matching_file_count"] == 2
+    assert result["match_count"] == 5
+    assert [file_result["file_path"] for file_result in result["files"]] == [
+        "a-first/notes.txt",
+        "z-last.txt",
+    ]
+    assert all(file_result["truncated"] for file_result in result["files"])
+    assert all(
+        len(file_result["excerpts"]) == 1 for file_result in result["files"]
+    )
+
+
+def test_search_course_silently_skips_unsearchable_files(monkeypatch, tmp_path):
+    module = load_file_service(monkeypatch, tmp_path)
+    service = module.FileService(tmp_path)
+    create_course_file(tmp_path, "notes.txt", "needle\n")
+    create_course_file(tmp_path, "binary.dat", b"\xff\xfe", binary=True)
+    create_course_file(tmp_path, "valid.pdf", b"pdf", binary=True)
+    create_course_file(tmp_path, "empty.pdf", b"pdf", binary=True)
+    create_course_file(tmp_path, "broken.pdf", b"pdf", binary=True)
+
+    def fake_pdf_reader(path):
+        if path.name == "broken.pdf":
+            raise RuntimeError("corrupt")
+        if path.name == "empty.pdf":
+            return SimpleNamespace(
+                is_encrypted=False,
+                pages=[FakePdfPage(" \n")],
+            )
+        return SimpleNamespace(
+            is_encrypted=False,
+            pages=[FakePdfPage("needle\n")],
+        )
+
+    monkeypatch.setattr(module, "PdfReader", fake_pdf_reader)
+
+    result = service.search_course("CMSC132", "needle", context_lines=0)
+
+    assert [file_result["file_path"] for file_result in result["files"]] == [
+        "notes.txt",
+        "valid.pdf",
+    ]
+    pdf_result = result["files"][1]
+    assert pdf_result["excerpts"][0]["page"] == 1
+
+
+def test_search_course_returns_empty_files_when_nothing_matches(monkeypatch, tmp_path):
+    module = load_file_service(monkeypatch, tmp_path)
+    service = module.FileService(tmp_path)
+    create_course_file(tmp_path, "notes.txt", "iteration\n")
+
+    result = service.search_course("CMSC132", "recursion")
+
+    assert result == {
+        "course_title": "CMSC132",
+        "keyword": "recursion",
+        "matching_file_count": 0,
+        "match_count": 0,
+        "files": [],
+    }
+
+
+def test_search_course_rejects_symlinked_course(monkeypatch, tmp_path):
+    module = load_file_service(monkeypatch, tmp_path)
+    service = module.FileService(tmp_path)
+    create_course_file(tmp_path, "notes.txt", "needle\n")
+    (tmp_path / "COURSE-LINK").symlink_to(tmp_path / "CMSC132")
+
+    with pytest.raises(ValueError, match="must not be a symbolic link"):
+        service.search_course("COURSE-LINK", "needle")

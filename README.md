@@ -17,6 +17,7 @@ service layer needed to browse course files safely.
   - `list-course-files`: lists the direct files inside a course directory.
   - `search-course-file`: searches one UTF-8 text or text-extractable PDF file
     within a course using case-insensitive literal matching.
+  - `search-course`: recursively searches eligible files throughout one course.
 
 `search-course-file` requires `course_title`, a course-relative `file_path`, and
 a non-empty `keyword`. It optionally accepts `context_lines` (default 3, maximum
@@ -24,6 +25,13 @@ a non-empty `keyword`. It optionally accepts `context_lines` (default 3, maximum
 JSON with matching line numbers and merged context excerpts. PDF results also
 identify the one-based page containing each excerpt. Scanned PDFs require OCR
 and are not supported.
+
+`search-course` accepts the same `keyword`, `context_lines`, and `max_results`
+search controls, but applies `max_results` independently to every matching file.
+It searches direct course files and directories through depth 5. Hidden entries,
+symbolic links, and directories named `venv`, `__pycache__`, `node_modules`,
+`dist`, or `build` are skipped. Other unreadable or non-searchable files are
+also skipped without failing the course-wide search.
 
 ## Project Layout
 

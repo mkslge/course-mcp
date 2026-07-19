@@ -21,6 +21,7 @@ def load_server(monkeypatch, root_dir):
 class FakeCourseService:
     def __init__(self):
         self.search_arguments = None
+        self.course_search_arguments = None
 
     def get_courses(self):
         return ["CMSC132"]
@@ -51,6 +52,27 @@ class FakeCourseService:
             "match_count": 0,
             "truncated": False,
             "excerpts": [],
+        }
+
+    def search_course(
+        self,
+        course_title,
+        keyword,
+        context_lines,
+        max_results,
+    ):
+        self.course_search_arguments = (
+            course_title,
+            keyword,
+            context_lines,
+            max_results,
+        )
+        return {
+            "course_title": course_title,
+            "keyword": keyword,
+            "matching_file_count": 0,
+            "match_count": 0,
+            "files": [],
         }
 
 
@@ -88,6 +110,21 @@ def test_list_tools_includes_search_course_file_tool(monkeypatch, tmp_path):
     assert schema["properties"]["max_results"]["minimum"] == 1
     assert schema["properties"]["max_results"]["maximum"] == 100
     assert schema["properties"]["max_results"]["default"] == 20
+
+
+def test_list_tools_includes_search_course_tool(monkeypatch, tmp_path):
+    server = load_server(monkeypatch, tmp_path)
+
+    tools = asyncio.run(server.handle_list_tools())
+
+    search_tool = next(tool for tool in tools if tool.name == "search-course")
+    schema = search_tool.inputSchema
+    assert schema["required"] == ["course_title", "keyword"]
+    assert schema["properties"]["keyword"]["minLength"] == 1
+    assert schema["properties"]["context_lines"]["default"] == 3
+    assert schema["properties"]["context_lines"]["maximum"] == 20
+    assert schema["properties"]["max_results"]["default"] == 20
+    assert schema["properties"]["max_results"]["maximum"] == 100
 
 
 def test_list_course_files_returns_files(monkeypatch, tmp_path):
@@ -163,3 +200,43 @@ def test_search_course_file_requires_arguments(
         match=f"Missing required argument: {missing_argument}",
     ):
         asyncio.run(server.handle_call_tool("search-course-file", arguments))
+
+
+def test_search_course_returns_json_and_uses_defaults(monkeypatch, tmp_path):
+    server = load_server(monkeypatch, tmp_path)
+    fake_service = FakeCourseService()
+    monkeypatch.setattr(server, "course_service", fake_service)
+
+    result = asyncio.run(
+        server.handle_call_tool(
+            "search-course",
+            {"course_title": "CMSC430", "keyword": "compile"},
+        )
+    )
+
+    assert fake_service.course_search_arguments == (
+        "CMSC430",
+        "compile",
+        3,
+        20,
+    )
+    assert json.loads(result[0].text) == {
+        "course_title": "CMSC430",
+        "keyword": "compile",
+        "matching_file_count": 0,
+        "match_count": 0,
+        "files": [],
+    }
+
+
+@pytest.mark.parametrize("missing_argument", ["course_title", "keyword"])
+def test_search_course_requires_arguments(monkeypatch, tmp_path, missing_argument):
+    server = load_server(monkeypatch, tmp_path)
+    arguments = {"course_title": "CMSC430", "keyword": "compile"}
+    arguments.pop(missing_argument)
+
+    with pytest.raises(
+        ValueError,
+        match=f"Missing required argument: {missing_argument}",
+    ):
+        asyncio.run(server.handle_call_tool("search-course", arguments))
