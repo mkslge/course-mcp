@@ -4,6 +4,7 @@ import json
 from course_mcp.config import ROOT_DIR
 from course_mcp.services.course_service import CourseService
 from course_mcp.services.file_service import FileService
+from course_mcp.services.pdf_text_extractor import PdfTextExtractor
 from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
@@ -12,7 +13,8 @@ import mcp.server.stdio
 
 notes: dict[str, str] = {}
 
-file_service = FileService(ROOT_DIR)
+pdf_text_extractor = PdfTextExtractor()
+file_service = FileService(ROOT_DIR, pdf_text_extractor)
 course_service = CourseService(file_service)
 
 server = Server("course-mcp")

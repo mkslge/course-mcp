@@ -3,9 +3,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from pypdf import PdfReader
-
 from course_mcp.config import ROOT_DIR
+from course_mcp.services.pdf_text_extractor import PdfTextExtractor
 
 COURSE_SEARCH_MAX_DEPTH = 5
 COURSE_SEARCH_EXCLUDED_DIRS = frozenset(
@@ -14,9 +13,16 @@ COURSE_SEARCH_EXCLUDED_DIRS = frozenset(
 
 
 class FileService:
-    def __init__(self, root_dir: Path):
+    def __init__(
+        self,
+        root_dir: Path,
+        pdf_extractor: PdfTextExtractor | None = None,
+    ):
         """Create a filesystem service restricted to a resolved root directory."""
         self.root_dir = root_dir.resolve()
+        self.pdf_extractor = (
+            pdf_extractor if pdf_extractor is not None else PdfTextExtractor()
+        )
 
     def resolve_path(self, relative_path: str) -> Path:
         """Resolve a relative path while preventing access outside the root."""
@@ -167,7 +173,7 @@ class FileService:
         """Search one resolved path and return its match details."""
         # Normalize a text document or each PDF page into the same line source.
         if path.suffix.casefold() == ".pdf":
-            sources = self._read_pdf(path)
+            sources = self.pdf_extractor.extract_pages(path)
         else:
             sources = [(None, self._read_text(path).splitlines())]
 
@@ -303,29 +309,6 @@ class FileService:
         except OSError as exc:
             raise ValueError(f"Unable to read file: {path.name}") from exc
 
-    def _read_pdf(self, path: Path) -> list[tuple[int | None, list[str]]]:
-        """Extract searchable lines from each page of an unencrypted PDF."""
-        try:
-            reader = PdfReader(path)
-        except Exception as exc:
-            raise ValueError(f"Unable to read PDF: {path.name}") from exc
-
-        if reader.is_encrypted:
-            raise ValueError(f"PDF is encrypted: {path.name}")
-
-        try:
-            sources = [
-                (page_number, (page.extract_text() or "").splitlines())
-                for page_number, page in enumerate(reader.pages, start=1)
-            ]
-        except Exception as exc:
-            raise ValueError(f"Unable to extract PDF text: {path.name}") from exc
-
-        if not any(line.strip() for _, lines in sources for line in lines):
-            raise ValueError(f"PDF has no extractable text: {path.name}")
-
-        return sources
-
     def _build_excerpts(
         self,
         sources: list[tuple[int | None, list[str]]],
@@ -379,7 +362,8 @@ class FileService:
         return excerpts
 
 
-file_service = FileService(ROOT_DIR)
+pdf_text_extractor = PdfTextExtractor()
+file_service = FileService(ROOT_DIR, pdf_text_extractor)
 
 
 def get_contents(

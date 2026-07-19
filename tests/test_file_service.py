@@ -1,8 +1,9 @@
 import importlib
 import sys
-from types import SimpleNamespace
 
 import pytest
+
+from course_mcp.services.pdf_text_extractor import PdfExtractionError
 
 
 def load_file_service(monkeypatch, root_dir):
@@ -244,30 +245,31 @@ def test_search_file_rejects_missing_directory_and_non_utf8_file(
         service.search_file("CMSC132", "binary.dat", "text")
 
 
-class FakePdfPage:
-    def __init__(self, text=None, error=None):
-        self.text = text
-        self.error = error
+class FakePdfExtractor:
+    def __init__(self, results):
+        self.results = results
+        self.paths = []
 
-    def extract_text(self):
-        if self.error is not None:
-            raise self.error
-        return self.text
+    def extract_pages(self, path):
+        self.paths.append(path)
+        result = self.results[path.name]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 def test_search_file_reports_pdf_pages_and_page_local_lines(monkeypatch, tmp_path):
     module = load_file_service(monkeypatch, tmp_path)
-    service = module.FileService(tmp_path)
     create_course_file(tmp_path, "LECTURE.PDF", b"pdf", binary=True)
-    pages = [
-        FakePdfPage("intro\nRecursion\nend"),
-        FakePdfPage("recursion again\nlast"),
-    ]
-    monkeypatch.setattr(
-        module,
-        "PdfReader",
-        lambda path: SimpleNamespace(is_encrypted=False, pages=pages),
+    extractor = FakePdfExtractor(
+        {
+            "LECTURE.PDF": [
+                (1, ["intro", "Recursion", "end"]),
+                (2, ["recursion again", "last"]),
+            ]
+        }
     )
+    service = module.FileService(tmp_path, extractor)
 
     result = service.search_file(
         "CMSC132",
@@ -283,39 +285,31 @@ def test_search_file_reports_pdf_pages_and_page_local_lines(monkeypatch, tmp_pat
         [1],
     ]
     assert result["excerpts"][1]["start_line"] == 1
+    assert extractor.paths == [tmp_path / "CMSC132" / "LECTURE.PDF"]
 
 
-def test_search_file_rejects_unsearchable_pdfs(monkeypatch, tmp_path):
+def test_search_file_propagates_pdf_extraction_errors(monkeypatch, tmp_path):
     module = load_file_service(monkeypatch, tmp_path)
-    service = module.FileService(tmp_path)
     create_course_file(tmp_path, "lecture.pdf", b"pdf", binary=True)
-
-    monkeypatch.setattr(
-        module,
-        "PdfReader",
-        lambda path: SimpleNamespace(is_encrypted=True, pages=[]),
+    extractor = FakePdfExtractor(
+        {"lecture.pdf": PdfExtractionError("PDF is encrypted: lecture.pdf")}
     )
+    service = module.FileService(tmp_path, extractor)
+
     with pytest.raises(ValueError, match="PDF is encrypted"):
         service.search_file("CMSC132", "lecture.pdf", "keyword")
 
-    monkeypatch.setattr(
-        module,
-        "PdfReader",
-        lambda path: SimpleNamespace(
-            is_encrypted=False,
-            pages=[FakePdfPage(" \n")],
-        ),
-    )
-    with pytest.raises(ValueError, match="no extractable text"):
-        service.search_file("CMSC132", "lecture.pdf", "keyword")
 
-    monkeypatch.setattr(
-        module,
-        "PdfReader",
-        lambda path: (_ for _ in ()).throw(RuntimeError("corrupt")),
-    )
-    with pytest.raises(ValueError, match="Unable to read PDF"):
-        service.search_file("CMSC132", "lecture.pdf", "keyword")
+def test_search_file_reads_text_without_using_pdf_extractor(monkeypatch, tmp_path):
+    module = load_file_service(monkeypatch, tmp_path)
+    create_course_file(tmp_path, "notes.txt", "needle\n")
+    extractor = FakePdfExtractor({})
+    service = module.FileService(tmp_path, extractor)
+
+    result = service.search_file("CMSC132", "notes.txt", "needle")
+
+    assert result["match_count"] == 1
+    assert extractor.paths == []
 
 
 def test_search_course_includes_files_through_depth_five(monkeypatch, tmp_path):
@@ -409,27 +403,21 @@ def test_search_course_applies_result_limit_per_file_and_sorts_paths(
 
 def test_search_course_silently_skips_unsearchable_files(monkeypatch, tmp_path):
     module = load_file_service(monkeypatch, tmp_path)
-    service = module.FileService(tmp_path)
     create_course_file(tmp_path, "notes.txt", "needle\n")
     create_course_file(tmp_path, "binary.dat", b"\xff\xfe", binary=True)
     create_course_file(tmp_path, "valid.pdf", b"pdf", binary=True)
     create_course_file(tmp_path, "empty.pdf", b"pdf", binary=True)
     create_course_file(tmp_path, "broken.pdf", b"pdf", binary=True)
-
-    def fake_pdf_reader(path):
-        if path.name == "broken.pdf":
-            raise RuntimeError("corrupt")
-        if path.name == "empty.pdf":
-            return SimpleNamespace(
-                is_encrypted=False,
-                pages=[FakePdfPage(" \n")],
-            )
-        return SimpleNamespace(
-            is_encrypted=False,
-            pages=[FakePdfPage("needle\n")],
-        )
-
-    monkeypatch.setattr(module, "PdfReader", fake_pdf_reader)
+    extractor = FakePdfExtractor(
+        {
+            "broken.pdf": PdfExtractionError("Unable to read PDF: broken.pdf"),
+            "empty.pdf": PdfExtractionError(
+                "PDF has no extractable text: empty.pdf"
+            ),
+            "valid.pdf": [(1, ["needle"])],
+        }
+    )
+    service = module.FileService(tmp_path, extractor)
 
     result = service.search_course("CMSC132", "needle", context_lines=0)
 

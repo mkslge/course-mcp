@@ -41,6 +41,7 @@ src/course_mcp/
   config/                environment/config loading
   services/
     file_service.py      safe filesystem access
+    pdf_text_extractor.py  page-oriented PDF text extraction
     course_service.py    course-oriented operations
   models/                simple data models
 tests/                   pytest tests
